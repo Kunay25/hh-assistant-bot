@@ -4,7 +4,11 @@ from typing import Optional, Dict, Any
 from config import MAX_BOT_TOKEN, MAX_API_URL
 import database as db
 from yandex_assistant import YandexAssistant
-
+import time
+import requests
+from typing import Optional, Dict, Any
+from pathlib import Path
+MAX_CA_BUNDLE = Path(__file__).resolve().parent / "certs" / "max_ca_bundle.pem"
 class MaxBot:
     """
     Класс интеграции с корпоративным мессенджером MAX через Bot API.
@@ -34,12 +38,13 @@ class MaxBot:
                 part = text[i:i + 3900]
 
                 response = requests.post(
-                    url,
-                    headers=self._get_headers(),
-                    params={"chat_id": chat_id},
-                    json={"text": part},
-                    timeout=15
-                )
+    url,
+    headers=self._get_headers(),
+    params={"chat_id": chat_id},
+    json={"text": part},
+    timeout=15,
+    verify=str(MAX_CA_BUNDLE)
+)
 
                 if response.status_code != 200:
                     print(f"[MAX] Ошибка отправки: {response.status_code}")
@@ -193,11 +198,12 @@ class MaxBot:
                     params["marker"] = marker
 
                 response = requests.get(
-                    f"{self.api_url}/updates",
-                    headers=self._get_headers(),
-                    params=params,
-                    timeout=30
-                )
+    f"{self.api_url}/updates",
+    headers=self._get_headers(),
+    params=params,
+    timeout=30,
+    verify=str(MAX_CA_BUNDLE)
+)
 
                 if response.status_code == 401:
                     print("[MAX] Неверный токен!")

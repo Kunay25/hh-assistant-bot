@@ -7,8 +7,6 @@ from knowledge_base import KnowledgeBase
 from yandex_assistant import YandexAssistant
 from bot_telegram import TelegramBot
 from bot_max import MaxBot
-import truststore
-truststore.inject_into_ssl()
 def run_cli_chat(assistant: YandexAssistant) -> None:
     """
     Интерактивный режим диалога прямо в терминале.

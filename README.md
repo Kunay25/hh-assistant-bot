@@ -140,9 +140,3 @@ git commit -m "Initial commit: HH assistant bot"
 git remote add origin https://github.com/ВАШ_ЛОГИН/hh-assistant-bot.git
 git push -u origin main
 ```
-
-Если проект уже является Git-репозиторием, не повторяйте `git init` и сперва проверьте `git remote -v`. Нельзя публиковать пароли, токены и содержимое `.env`.
-
-## 9. Видеодемонстрация
-
-Запишите видео экрана со следующими действиями: показать публичный репозиторий; открыть `.env.example`, `.gitignore` и `requirements.txt`; открыть SQLAlchemy-модели и базу в pgAdmin; запустить бота; отправить `/start` и вопрос; показать сохранение новой записи в БД и результат команды `/history`. Реальные значения токенов, ключей и паролей на видео не показывать.

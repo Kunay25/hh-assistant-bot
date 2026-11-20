@@ -20,7 +20,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 # Токены ботов
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 MAX_BOT_TOKEN = os.getenv("MAX_BOT_TOKEN", "").strip()
-MAX_API_URL = os.getenv("MAX_API_URL", "https://platform-api.max.ru").rstrip("/")
+MAX_API_URL = os.getenv("MAX_API_URL", "https://platform-api2.max.ru").rstrip("/")
 
 # Настройки Yandex Cloud
 YC_API_KEY = os.getenv("YC_API_KEY", "").strip()

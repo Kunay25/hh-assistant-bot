@@ -98,11 +98,11 @@ Copy-Item .env.example .env
 | `DATABASE_URL` | Строка подключения к PostgreSQL: логин, пароль, адрес, порт и БД | `postgresql+psycopg2://postgres:postgres_here@localhost:5432/hh_bot_db` |
 | `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота от @BotFather | `123456:EXAMPLE_ONLY` |
 | `MAX_BOT_TOKEN` | Токен бота в мессенджере MAX | `example_max_token` |
-| `MAX_API_URL` | Адрес MAX Bot API | `https://platform-api.max.ru` |
+| `MAX_API_URL` | Адрес MAX Bot API | `https://platform-api2.max.ru` |
 | `YC_API_KEY` | Секретный API-ключ Yandex Cloud | `example_api_key` |
 | `YC_FOLDER_ID` | Идентификатор каталога Yandex Cloud | `example_folder_id` |
 | `YC_ASSISTANT_ID` | Идентификатор Yandex Assistant, если создан | `example_assistant_id` |
-| `YC_MODEL` | Имя модели YandexGPT | `yandexgpt` |
+| `YC_MODEL` | Имя модели YandexGPT | `yandexgpt-5.1` |
 | `DOCS_DIR` | Папка для загруженной документации HH.ru | `data/hh_docs` |
 
 Значения с префиксом `example` и паролем `postgres_here` — **заглушки**, не настоящие ключи. Поля токенов и Yandex Cloud можно оставить пустыми для CLI. `DATABASE_URL` обязателен. Если пароль для PostgreSQL содержит символы `@`, `:`, `/` или `%`, их нужно URL-кодировать.
@@ -140,3 +140,52 @@ git commit -m "Initial commit: HH assistant bot"
 git remote add origin https://github.com/ВАШ_ЛОГИН/hh-assistant-bot.git
 git push -u origin main
 ```
+
+Если проект уже является Git-репозиторием, не повторяйте `git init` и сперва проверьте `git remote -v`. Нельзя публиковать пароли, токены и содержимое `.env`.
+
+## Автоматическое обновление документации и YandexGPT 5.1
+
+База знаний хранится локально в `data/hh_docs`. При запуске программы, а затем
+каждые 6 часов, фоновый поток загружает обновления Markdown-документации из
+официального репозитория `hhru/api`. Бот MAX и Telegram видят новые документы
+без перезапуска. При недоступности GitHub сохраняются последние рабочие версии.
+Фоновая проверка работает **только пока запущен Python-процесс**.
+Команда `/update_kb` остаётся доступной для ручного обновления.
+
+Обработка запроса происходит по схеме RAG: локальный поиск извлекает подходящие
+фрагменты документации, затем агент Yandex AI Studio Responses API использует
+YandexGPT 5.1 для генерации ответа с опорой на эти фрагменты. Результат содержит
+ссылки на исходные документы. Используется официальный эндпоинт
+`https://ai.api.cloud.yandex.net/v1` (OpenAI-совместимый интерфейс).
+
+Для включения облачной генерации укажите в локальном `.env`:
+
+```env
+YC_API_KEY=ваш_ключ_API_Yandex_Cloud
+YC_FOLDER_ID=ваш_folder_id
+YC_MODEL=yandexgpt-5.1
+```
+
+`YC_ASSISTANT_ID` в современной реализации Responses API не нужен. Без ключа
+программа работает в резервном локальном режиме и показывает релевантный
+фрагмент документации (это **не** генерация YandexGPT). Для API необходимы
+права доступа к Yandex AI Studio и активный платёжный аккаунт; запросы могут
+тарифицироваться.
+
+В `main.py` после обработки `--update-kb`, но до запуска режимов бота добавьте:
+
+```python
+kb.start_auto_updates(interval_hours=6)
+```
+
+Для проверки:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m py_compile main.py knowledge_base.py yandex_assistant.py bot_max.py
+python main.py --max
+```
+
+Верификация реальной генерации требует отправить тестовый вопрос при
+заполненных `YC_API_KEY` и `YC_FOLDER_ID`; одни лишь файлы проекта
+не доказывают доступность облачного API.

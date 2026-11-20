@@ -172,12 +172,6 @@ YC_MODEL=yandexgpt-5.1
 права доступа к Yandex AI Studio и активный платёжный аккаунт; запросы могут
 тарифицироваться.
 
-В `main.py` после обработки `--update-kb`, но до запуска режимов бота добавьте:
-
-```python
-kb.start_auto_updates(interval_hours=6)
-```
-
 Для проверки:
 
 ```powershell

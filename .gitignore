@@ -1,0 +1,38 @@
+# Секретные переменные окружения
+.env
+.env.local
+
+# Базы данных и временные файлы
+*.db
+*.sqlite3
+data/
+*.sqlite
+
+# Байткод Python и кэш
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Виртуальные окружения
+venv/
+.venv/
+env/
+ENV/
+
+# Среды разработки (IDE)
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Логи и отчеты тестирования
+*.log
+.coverage
+htmlcov/
+
+# Инструменты тестирования и сборки
+.pytest_cache/
+build/
+dist/
+*.egg-info/

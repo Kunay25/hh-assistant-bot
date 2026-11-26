@@ -1,28 +1,28 @@
-import sys
 import argparse
 import threading
-from config import TELEGRAM_BOT_TOKEN, MAX_BOT_TOKEN
+from config import MAX_BOT_TOKEN, TELEGRAM_BOT_TOKEN
 import database as db
 from knowledge_base import KnowledgeBase
 from yandex_assistant import YandexAssistant
 from bot_telegram import TelegramBot
 from bot_max import MaxBot
+
+
 def run_cli_chat(assistant: YandexAssistant) -> None:
     """
-    Интерактивный режим диалога прямо в терминале.
+    Интерактивный режим диалога прямо в терминале (локальная консоль администратора).
     """
     print("\n" + "=" * 60)
-    print("🤖 Интеллектуальный помощник по API HeadHunter (hh.ru)")
-    print("Режим: Консольный интерфейс (CLI)")
+    print("Помощник по API HeadHunter (hh.ru)")
+    print("Режим: консольный интерфейс (CLI)")
     print("Доступные команды: /help, /history, /stats, /update_kb, exit")
     print("=" * 60 + "\n")
-    
-    # Создаем или получаем тестового пользователя для консоли
+
     user = db.get_or_create_user(
         platform="cli",
         platform_user_id="cli_dev_user",
         username="console_user",
-        first_name="Разработчик"
+        first_name="Разработчик",
     )
 
     while True:
@@ -49,7 +49,16 @@ def run_cli_chat(assistant: YandexAssistant) -> None:
 
             if query == "/stats":
                 stats = db.get_database_stats()
-                print(f"\n[Статистика]: Пользователей={stats['total_users']}, Запросов={stats['total_interactions']}, Платформы={stats['platforms']}\n")
+                kb_stats = assistant.kb.get_stats()
+                print(
+                    f"\n[Статистика]: Пользователей={stats['total_users']}, "
+                    f"Запросов={stats['total_interactions']}, Платформы={stats['platforms']}"
+                )
+                print(
+                    f"[База знаний]: Файлов={kb_stats['files_count']}, "
+                    f"Версия={kb_stats['docs_version']}, Обновлена={kb_stats['updated_at']}, "
+                    f"Поиск={kb_stats['search_mode']}\n"
+                )
                 continue
 
             if query == "/update_kb":
@@ -60,8 +69,7 @@ def run_cli_chat(assistant: YandexAssistant) -> None:
 
             print("\nПоиск информации и формирование ответа...")
             answer, sources = assistant.generate_response(query)
-            
-            # Сохраняем в БД
+
             sources_str = ", ".join(sources) if sources else ""
             db.save_interaction(user["id"], query, answer, sources_str)
 
@@ -72,13 +80,16 @@ def run_cli_chat(assistant: YandexAssistant) -> None:
             print("\nВыход из программы.")
             break
 
-def start_telegram_bot() -> None:
-    bot = TelegramBot()
+
+def start_telegram_bot(assistant: YandexAssistant) -> None:
+    bot = TelegramBot(assistant=assistant)
     bot.run()
 
-def start_max_bot() -> None:
-    bot = MaxBot()
+
+def start_max_bot(assistant: YandexAssistant) -> None:
+    bot = MaxBot(assistant=assistant)
     bot.poll_updates()
+
 
 def main():
     parser = argparse.ArgumentParser(description="Чат-бот ассистент по API HH.ru на базе Yandex Assistant")
@@ -89,15 +100,21 @@ def main():
     parser.add_argument("--update-kb", action="store_true", help="Обновить базу знаний из GitHub и завершить работу")
     args = parser.parse_args()
 
-    # 1. Инициализация базы данных
+    # Инициализация базы данных
     db.init_db()
 
-    # 2. Проверка базы знаний
+    # Проверка базы знаний
     kb = KnowledgeBase()
     stats = kb.get_stats()
     if stats["files_count"] == 0:
         print("[Инициализация] Локальная база знаний пуста. Загрузка docs из GitHub...")
         kb.download_docs()
+        stats = kb.get_stats()
+
+    print(
+        f"[База знаний] Файлов: {stats['files_count']}, фрагментов: {stats['chunks_count']}, "
+        f"версия: {stats['docs_version']}, поиск: {stats['search_mode']}"
+    )
 
     assistant = YandexAssistant(kb=kb)
 
@@ -107,35 +124,33 @@ def main():
         res = assistant.update_knowledge_base()
         print(f"[Результат]: {res}")
         return
+
     # Автоматическое обновление документации
     kb.start_auto_updates(interval_hours=6)
-    # Явный запуск CLI
+
     if args.cli:
         run_cli_chat(assistant)
         return
 
-    # Запуск Telegram
     if args.telegram:
-        start_telegram_bot()
+        start_telegram_bot(assistant)
         return
 
-    # Запуск MAX
     if args.max:
-        start_max_bot()
+        start_max_bot(assistant)
         return
 
-    # Запуск всех ботов
     if args.all:
         threads = []
         if TELEGRAM_BOT_TOKEN:
-            t1 = threading.Thread(target=start_telegram_bot, daemon=True)
+            t1 = threading.Thread(target=start_telegram_bot, args=(assistant,), daemon=True)
             t1.start()
             threads.append(t1)
         if MAX_BOT_TOKEN:
-            t2 = threading.Thread(target=start_max_bot, daemon=True)
+            t2 = threading.Thread(target=start_max_bot, args=(assistant,), daemon=True)
             t2.start()
             threads.append(t2)
-        
+
         if not threads:
             print("[Внимание] Токены TELEGRAM_BOT_TOKEN и MAX_BOT_TOKEN не заданы. Переключение в CLI-режим.")
             run_cli_chat(assistant)
@@ -148,21 +163,20 @@ def main():
                 print("\nОстановка приложения.")
         return
 
-    # Запуск по умолчанию при отсутствии аргументов:
     if TELEGRAM_BOT_TOKEN and not MAX_BOT_TOKEN:
-        start_telegram_bot()
+        start_telegram_bot(assistant)
     elif MAX_BOT_TOKEN and not TELEGRAM_BOT_TOKEN:
-        start_max_bot()
+        start_max_bot(assistant)
     elif TELEGRAM_BOT_TOKEN and MAX_BOT_TOKEN:
         print("[Система] Обнаружены токены для Telegram и MAX. Запуск обоих ботов...")
-        t1 = threading.Thread(target=start_telegram_bot, daemon=True)
+        t1 = threading.Thread(target=start_telegram_bot, args=(assistant,), daemon=True)
         t1.start()
-        start_max_bot()
+        start_max_bot(assistant)
     else:
-        # Если ни один токен пока не настроен, открываем дружелюбный CLI режим
         print("[Инфо] Токены для Telegram и MAX пока не настроены в .env файле.")
         print("[Инфо] Запуск удобного локального интерактивного режима для тестирования.")
         run_cli_chat(assistant)
+
 
 if __name__ == "__main__":
     main()

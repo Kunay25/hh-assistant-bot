@@ -1,185 +1,108 @@
-# HH Assistant Bot — помощник по API HeadHunter
+# HH Assistant Bot
 
-Учебный Python-проект: бот для MAX, Telegram и консоли. Помогает разработчикам находить ответы по официальной документации API HH.ru. Проект предназначен для демонстрации на практике.
+Чат-бот для MAX, Telegram и консоли, который помогает разработчикам искать ответы по официальной документации API HH.ru (`github.com/hhru/api`).
 
-## 1. Возможности
+## Что умеет бот
 
-- Отвечает на вопросы про OAuth, вакансии, резюме и другие методы API HeadHunter.
-- Скачивает Markdown-документацию из [hhru/api](https://github.com/hhru/api) и ищет подходящие разделы.
-- Может обращаться к YandexGPT с найденным контекстом (если настроен Yandex Cloud); без ключей показывает релевантные фрагменты документации.
-- Поддерживает MAX, Telegram и локальный CLI-режим.
-- Хранит пользователей и историю вопросов в **PostgreSQL через SQLAlchemy ORM**.
+- Отвечает на вопросы по OAuth-авторизации, вакансиям, резюме, откликам и ошибкам API HeadHunter.
+- Скачивает Markdown-документацию из `hhru/api` (папка `docs`), сверяет список файлов при обновлении, удаляет устаревшие документы и сохраняет версию и дату загрузки в `kb_metadata.json`.
+- Ищет ответы гибридным поиском на базе локального Qdrant и FastEmbed: смысловые векторы (`paraphrase-multilingual-MiniLM-L12-v2`) плюс лексический поиск (`Qdrant/bm25` с русским стеммером) через алгоритм RRF.
+- При заполненных ключах Yandex Cloud передаёт найденный контекст в YandexGPT; без ключей возвращает подходящий фрагмент документации и ссылки на статьи.
+- Сохраняет пользователей и историю диалогов в PostgreSQL через SQLAlchemy ORM.
+- Ограничивает доступ к служебным командам `/stats` и `/update_kb` по списку `ADMIN_IDS` из `.env`.
 
-## 2. Структура проекта
+## Структура проекта
 
 ```text
 hh_assistant_bot/
-├── .env.example       # Образец переменных окружения, без настоящих секретов
-├── .gitignore         # Файлы, которые нельзя или не нужно публиковать
-├── requirements.txt   # Python-зависимости
-├── README.md          # Описание, установка и демонстрация
-├── config.py          # Загрузка .env с помощью load_env() / python-dotenv
-├── database.py        # PostgreSQL, SQLAlchemy ORM, модели users/interactions
-├── knowledge_base.py  # Загрузка и поиск по документации HH.ru
-├── yandex_assistant.py# Ответы YandexGPT или локальный резервный ответ
-├── bot_max.py         # Бот MAX
-├── bot_telegram.py    # Бот Telegram
-├── main.py            # Точка входа
-└── test_system.py     # Проверка основных компонентов
+├── .env.example        # Шаблон настроек без реальных ключей
+├── .gitignore          # Исключения для Git (.env, data/, кеш, сертификаты)
+├── requirements.txt    # Зависимости проекта
+├── README.md           # Описание и инструкция по запуску
+├── config.py           # Загрузка .env через load_env() и проверка ADMIN_IDS
+├── database.py         # Модели SQLAlchemy (User, Interaction) и работа с PostgreSQL
+├── knowledge_base.py   # Синхронизация docs с GitHub и гибридный поиск в Qdrant
+├── yandex_assistant.py # Подготовка контекста и запросы в YandexGPT
+├── bot_max.py          # Обработка сообщений и polling для мессенджера MAX
+├── bot_telegram.py     # Обработка команд и сообщений для Telegram
+├── main.py             # Общий запуск (CLI / Telegram / MAX / --all)
+└── test_system.py      # Автотесты основных модулей
 ```
 
-Папки `data/` и `.venv/`, а также локальный `.env` создаются у разработчика и не публикуются на GitHub.
+Папки `data/`, `.venv/` и файл `.env` создаются локально и не загружаются на GitHub.
 
-## 3. Требования
+## Требования
 
-- Windows 10/11, Python **3.10 или выше** (рекомендуется 3.12)
-- PostgreSQL (вместе с pgAdmin), работающий локально
-- Доступ к сети для скачивания документации HH.ru
-- Токен Telegram/MAX — только если нужен запуск в соответствующем мессенджере
+- Windows 10/11, Python 3.10 или выше (проект проверялся на Python 3.12).
+- Локальный сервер PostgreSQL и pgAdmin: https://www.postgresql.org/download/windows/
+- Доступ в интернет для скачивания документации HH.ru и моделей FastEmbed при первом запуске.
+- Токены ботов Telegram и MAX (если запускаете не только консольный режим).
 
-## 4. Установка — пошагово
+## Установка и запуск
 
-**1.** Скачать и установить PostgreSQL вместе с pgAdmin: https://www.postgresql.org/download/windows/. Во время установки записать пароль пользователя `postgres`, оставить порт `5432` (если не занят).
-
-**2.** Открыть pgAdmin, подключиться к локальному серверу, в разделе **Databases** выбрать **Create → Database...**, указать имя `hh_bot_db` и сохранить. *pgAdmin — это интерфейс; сервер PostgreSQL устанавливается отдельно или вместе с установщиком PostgreSQL.*
-
-**3.** Открыть проект в VS Code и создать виртуальное окружение в PowerShell (необязательно, но рекомендуется):
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-Если предпочитаете установленный глобально Python:
+1. Установите PostgreSQL вместе с pgAdmin, запомните пароль пользователя `postgres` (порт по умолчанию `5432`).
+2. Откройте pgAdmin, подключитесь к локальному серверу и создайте базу данных `hh_bot_db` (Databases -> Create -> Database).
+3. Установите зависимости в PowerShell:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-**4.** Скопировать `.env.example` в `.env` (PowerShell):
+4. Создайте локальный `.env` из шаблона:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-В файле `.env` установить **реальный** пароль вместо `postgres_here` в `DATABASE_URL`, при необходимости заполнить токены Telegram/MAX и ключи Yandex Cloud. Не добавлять `.env` в Git.
+Откройте `.env` и пропишите пароль в `DATABASE_URL`, а в `ADMIN_IDS` укажите свой Telegram/MAX ID (чтобы работали `/stats` и `/update_kb`). При необходимости добавьте токены ботов и ключи Yandex Cloud.
 
-**5.** Проверить БД и запустить консольную версию:
-
-```powershell
-.\.venv\Scripts\python.exe main.py --cli
-```
-
-При первом запуске SQLAlchemy создаёт в существующей БД `hh_bot_db` таблицы `users` и `interactions`. Если PostgreSQL не запущен, имя БД или пароль неправильные, подключение завершится ошибкой.
-
-**6.** Для запуска Telegram (после заполнения `TELEGRAM_BOT_TOKEN`):
+5. Проверьте работу в консольном режиме (при первом старте создадутся таблицы `users` и `interactions` в PostgreSQL, скачаются документы и построится индекс в `data/qdrant_db`):
 
 ```powershell
-.\.venv\Scripts\python.exe main.py --telegram
+python main.py --cli
 ```
 
-Для MAX: `python main.py --max`; для всех настроенных ботов: `python main.py --all`.
-
-**7.** Обновление документации и тесты:
+6. Запуск мессенджеров, обновление базы и тесты:
 
 ```powershell
-.\.venv\Scripts\python.exe main.py --update-kb
-.\.venv\Scripts\python.exe test_system.py
+python main.py --telegram   # запуск Telegram-бота
+python main.py --max        # запуск MAX-бота
+python main.py --all        # запуск обоих ботов
+python main.py --update-kb  # ручное обновление документации
+python test_system.py       # проверка модулей
 ```
 
-**Внимание:** `test_system.py` создаёт тестовые записи в настроенной базе данных. Желательно выполнять его в отдельной тестовой БД.
+## Описание файла .env
 
-## 5. Переменные окружения (.env)
+Все настройки и секреты загружаются из `.env` функцией `load_env()` в `config.py` (вызывает `load_dotenv()` из `python-dotenv`).
 
-Все секреты читаются из локального `.env` функцией `load_env()` в файле `config.py` при помощи `load_dotenv()` из библиотеки `python-dotenv`. В GitHub публикуется **только** `.env.example` с безопасными примерными значениями.
-
-| Поле | Что означает | Пример заполнения |
+| Поле | Назначение | Пример |
 |---|---|---|
-| `DATABASE_URL` | Строка подключения к PostgreSQL: логин, пароль, адрес, порт и БД | `postgresql+psycopg2://postgres:postgres_here@localhost:5432/hh_bot_db` |
+| `DATABASE_URL` | Строка подключения к PostgreSQL для SQLAlchemy | `postgresql+psycopg2://postgres:postgres_here@localhost:5432/hh_bot_db` |
 | `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота от @BotFather | `123456:EXAMPLE_ONLY` |
 | `MAX_BOT_TOKEN` | Токен бота в мессенджере MAX | `example_max_token` |
 | `MAX_API_URL` | Адрес MAX Bot API | `https://platform-api2.max.ru` |
-| `YC_API_KEY` | Секретный API-ключ Yandex Cloud | `example_api_key` |
-| `YC_FOLDER_ID` | Идентификатор каталога Yandex Cloud | `example_folder_id` |
-| `YC_ASSISTANT_ID` | Идентификатор Yandex Assistant, если создан | `example_assistant_id` |
-| `YC_MODEL` | Имя модели YandexGPT | `yandexgpt-5.1` |
-| `DOCS_DIR` | Папка для загруженной документации HH.ru | `data/hh_docs` |
+| `ADMIN_IDS` | ID администраторов в Telegram/MAX через запятую | `123456789,987654321` |
+| `YC_API_KEY` | API-ключ сервисного аккаунта Yandex Cloud | `example_api_key` |
+| `YC_FOLDER_ID` | ID каталога в Yandex Cloud | `example_folder_id` |
+| `YC_ASSISTANT_ID` | ID ассистента в Yandex AI Studio (необязательно) | `example_assistant_id` |
+| `YC_MODEL` | Модель YandexGPT | `yandexgpt-5.1` |
+| `DOCS_DIR` | Папка для локальных Markdown-файлов документации | `data/hh_docs` |
+| `QDRANT_DIR` | Папка для локального векторного индекса Qdrant | `data/qdrant_db` |
 
-Значения с префиксом `example` и паролем `postgres_here` — **заглушки**, не настоящие ключи. Поля токенов и Yandex Cloud можно оставить пустыми для CLI. `DATABASE_URL` обязателен. Если пароль для PostgreSQL содержит символы `@`, `:`, `/` или `%`, их нужно URL-кодировать.
+Для запуска только в консольном режиме поля с токенами и ключами Yandex Cloud можно оставить пустыми, обязателен только `DATABASE_URL`.
 
-## 6. Устройство базы данных
+## База данных
 
-`database.py` использует SQLAlchemy ORM и драйвер `psycopg2-binary` для PostgreSQL. Таблицы:
+Модуль `database.py` работает через SQLAlchemy ORM и `psycopg2-binary`. Используются две таблицы:
 
-- `users`: `id` (PK), `platform`, `platform_user_id`, `username`, `first_name`, `created_at`, `last_seen`; пара (`platform`, `platform_user_id`) уникальна.
-- `interactions`: `id` (PK), `user_id` (FK → `users.id`), `user_query`, `bot_response`, `sources`, `created_at`.
+- `users`: `id` (PK), `platform`, `platform_user_id`, `username`, `first_name`, `created_at`, `last_seen`. Пара `(platform, platform_user_id)` уникальна.
+- `interactions`: `id` (PK), `user_id` (FK -> `users.id`), `user_query`, `bot_response`, `sources`, `created_at`.
 
-Основные операции: регистрация или обновление пользователя, сохранение вопросов/ответов, история последних сообщений, статистика по платформам.
+## Обновление документации, поиск и права доступа
 
-## 7. Проверка перед публикацией
+При старте, каждые 6 часов в фоне и по команде `/update_kb` `knowledge_base.py` запрашивает список `.md`-файлов в `hhru/api/docs`. Изменённые файлы обновляются, а файлы, которых больше нет в репозитории, удаляются и с диска. Дата обновления и SHA последнего коммита `docs` сохраняются в `data/hh_docs/kb_metadata.json`.
 
-Выполнить в PowerShell из папки проекта:
+Для поиска используется локальный Qdrant: каждый фрагмент документации хранит плотный смысловой вектор и разреженный BM25-вектор с русским стеммингом, которые при запросе объединяются через `Fusion.RRF`. Благодаря этому бот находит нужный раздел как по точным кодам ошибок и методам, так и по разным словоформам и перефразированным вопросам.
 
-```powershell
-git status --short
-git check-ignore .env
-```
-
-Вторая команда должна показать `.env`, то есть секретный файл игнорируется. Проверьте, чтобы в `git status` не было `.env`, локальных БД, `.venv` и токенов.
-
-## 8. Публикация на GitHub
-
-Создать пустой **Public** репозиторий `hh-assistant-bot` на GitHub **без** автоматической генерации README (он уже есть в проекте). Из папки проекта выполнить:
-
-```powershell
-git init
-git branch -M main
-git add .
-git status
-git commit -m "Initial commit: HH assistant bot"
-git remote add origin https://github.com/ВАШ_ЛОГИН/hh-assistant-bot.git
-git push -u origin main
-```
-
-Если проект уже является Git-репозиторием, не повторяйте `git init` и сперва проверьте `git remote -v`. Нельзя публиковать пароли, токены и содержимое `.env`.
-
-## Автоматическое обновление документации и YandexGPT 5.1
-
-База знаний хранится локально в `data/hh_docs`. При запуске программы, а затем
-каждые 6 часов, фоновый поток загружает обновления Markdown-документации из
-официального репозитория `hhru/api`. Бот MAX и Telegram видят новые документы
-без перезапуска. При недоступности GitHub сохраняются последние рабочие версии.
-Фоновая проверка работает **только пока запущен Python-процесс**.
-Команда `/update_kb` остаётся доступной для ручного обновления.
-
-Обработка запроса происходит по схеме RAG: локальный поиск извлекает подходящие
-фрагменты документации, затем агент Yandex AI Studio Responses API использует
-YandexGPT 5.1 для генерации ответа с опорой на эти фрагменты. Результат содержит
-ссылки на исходные документы. Используется официальный эндпоинт
-`https://ai.api.cloud.yandex.net/v1` (OpenAI-совместимый интерфейс).
-
-Для включения облачной генерации укажите в локальном `.env`:
-
-```env
-YC_API_KEY=ваш_ключ_API_Yandex_Cloud
-YC_FOLDER_ID=ваш_folder_id
-YC_MODEL=yandexgpt-5.1
-```
-
-`YC_ASSISTANT_ID` в современной реализации Responses API не нужен. Без ключа
-программа работает в резервном локальном режиме и показывает релевантный
-фрагмент документации (это **не** генерация YandexGPT). Для API необходимы
-права доступа к Yandex AI Studio и активный платёжный аккаунт; запросы могут
-тарифицироваться.
-
-Для проверки:
-
-```powershell
-python -m pip install -r requirements.txt
-python -m py_compile main.py knowledge_base.py yandex_assistant.py bot_max.py
-python main.py --max
-```
-
-Верификация реальной генерации требует отправить тестовый вопрос при
-заполненных `YC_API_KEY` и `YC_FOLDER_ID`; одни лишь файлы проекта
-не доказывают доступность облачного API.
+Команды `/stats` и `/update_kb` в `bot_max.py` и `bot_telegram.py` проверяют `is_admin(user_id)`. Обычные пользователи не видят эти команды в подсказках и получают отказ при их вызове.
